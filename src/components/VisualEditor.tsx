@@ -403,7 +403,7 @@ export function VisualEditor({
         <div
           className={`visual-stage${settings.mobilePreview ? ' visual-stage--mobile' : ''}`}
         >
-          <EditorContent editor={editor} />
+          <EditorContent editor={editor} className="visual-doc" />
           <TableBubbleToolbar editor={editor} />
         </div>
       </div>

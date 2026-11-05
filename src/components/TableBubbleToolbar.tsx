@@ -91,17 +91,25 @@ export function TableBubbleToolbar({ editor }: Props) {
   }, [editor])
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
     // Defer the first measurement so setPos does not run synchronously inside
     // the effect (cascading render warning); the toolbar is placed pre-paint.
     queueMicrotask(update)
     editor.on('selectionUpdate', update)
     editor.on('transaction', update)
     editor.on('focus', update)
+
+    // The stage resizes without any editor transaction (mobile preview, pane
+    // collapse/expand, window resize) — re-place the bubble when it does.
+    const stage = editor.view.dom.closest('.visual-stage') as HTMLElement | null
+    const observer = stage ? new ResizeObserver(() => update()) : null
+    if (stage) observer?.observe(stage)
+
     return () => {
       editor.off('selectionUpdate', update)
       editor.off('transaction', update)
       editor.off('focus', update)
+      observer?.disconnect()
     }
   }, [editor, update])
 

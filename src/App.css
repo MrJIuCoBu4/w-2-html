@@ -383,8 +383,10 @@
   flex-direction: column;
 }
 
-/* TipTap wraps ProseMirror; stretch so clicks in empty space stay in the doc. */
-.visual-stage > div {
+/* TipTap wraps ProseMirror; stretch so clicks in empty space stay in the doc.
+   Scoped to the editor wrapper only — .visual-stage also hosts the floating
+   table bubble, which must keep its content height (not stretch to 100%). */
+.visual-stage > .visual-doc {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -1921,6 +1923,11 @@
   gap: 2px;
   width: max-content;
   min-width: 0;
+  /* Defensive: never inherit flex stretching from the stage layout. */
+  flex: none;
+  height: max-content;
+  min-height: 0;
+  box-sizing: border-box;
 }
 
 .table-bubble-row {
