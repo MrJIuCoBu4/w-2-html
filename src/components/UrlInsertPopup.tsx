@@ -14,9 +14,15 @@ type Props = {
   testId?: string
 }
 
-/** Small anchored URL popup (replaces window.prompt for Link / Image / Video). */
-export function UrlInsertPopup({
-  open,
+type FormProps = Omit<Props, 'open'>
+
+/**
+ * The form is mounted only while the popup is open, so its `value` state starts
+ * from `initialValue` on every open — no effect needed to reset it.
+ * `key={initialValue}` keeps the old behavior when the caller swaps the seeded
+ * URL while the popup is already open.
+ */
+function UrlInsertForm({
   title,
   label = 'URL',
   initialValue = 'https://',
@@ -27,30 +33,25 @@ export function UrlInsertPopup({
   onConfirm,
   onClose,
   testId = 'url-insert-popup',
-}: Props) {
+}: FormProps) {
   const [value, setValue] = useState(initialValue)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Runs once per mount: mount === popup opened.
   useEffect(() => {
-    if (!open) return
-    setValue(initialValue)
-    const t = window.setTimeout(() => {
-      inputRef.current?.focus()
-      inputRef.current?.select()
-    }, 20)
-    return () => window.clearTimeout(t)
-  }, [open, initialValue])
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    el.select()
+  }, [])
 
   useEffect(() => {
-    if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open) return null
+  }, [onClose])
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -102,4 +103,10 @@ export function UrlInsertPopup({
       </form>
     </div>
   )
+}
+
+/** Small anchored URL popup (replaces window.prompt for Link / Image / Video). */
+export function UrlInsertPopup({ open, ...props }: Props) {
+  if (!open) return null
+  return <UrlInsertForm key={props.initialValue ?? ''} {...props} />
 }

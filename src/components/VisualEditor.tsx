@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { ListItem } from '@tiptap/extension-list'
@@ -90,7 +97,10 @@ export function VisualEditor({
   onEditorReady,
 }: Props) {
   const settingsRef = useRef(settings)
-  settingsRef.current = settings
+  // Mirror settings for paste handlers; layout effects run before any user event.
+  useLayoutEffect(() => {
+    settingsRef.current = settings
+  }, [settings])
   const editorRef = useRef<Editor | null>(null)
   const styleTagRef = useRef<HTMLStyleElement | null>(null)
   const fontLinksRef = useRef<HTMLLinkElement[]>([])

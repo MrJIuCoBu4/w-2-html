@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   FaArrowsAlt,
   FaChevronLeft,
@@ -59,7 +59,10 @@ export default function App() {
   })
   const html = history.present
   const htmlRef = useRef(html)
-  htmlRef.current = html
+  // Mirror the committed document for event handlers (effects run before events).
+  useLayoutEffect(() => {
+    htmlRef.current = html
+  }, [html])
 
   const [fontSize, setFontSize] = useState(14)
   const [htmlFullscreen, setHtmlFullscreen] = useState(false)
@@ -82,16 +85,6 @@ export default function App() {
       return next
     })
   }, [])
-
-  // Keep paneFocus coherent with showCodePane (header toggle / settings).
-  useEffect(() => {
-    if (!settings.showCodePane) {
-      setPaneFocus('visual')
-      setHtmlFullscreen(false)
-      return
-    }
-    setPaneFocus((f) => (f === 'visual' ? 'both' : f))
-  }, [settings.showCodePane])
 
   const setPaneLayout = useCallback(
     (focus: 'both' | 'visual' | 'html') => {
@@ -311,13 +304,18 @@ export default function App() {
     setHistory((h) => redoHistory(h))
   }
 
-  // paneFocus is the layout source of truth; showCodePane stays mirrored to it.
-  const effectivePaneFocus = paneFocus
+  // paneFocus drives the layout; a hidden code pane always means "visual only".
+  const effectivePaneFocus: 'both' | 'visual' | 'html' = !settings.showCodePane
+    ? 'visual'
+    : paneFocus === 'visual'
+      ? 'both'
+      : paneFocus
+  const effectiveHtmlFullscreen = effectivePaneFocus !== 'visual' && htmlFullscreen
 
   return (
     <div className="app">
       <main
-        className={`editor-grid editor-grid--${effectivePaneFocus}${htmlFullscreen ? ' editor-grid--html-full' : ''}`}
+        className={`editor-grid editor-grid--${effectivePaneFocus}${effectiveHtmlFullscreen ? ' editor-grid--html-full' : ''}`}
       >
         <VisualEditor
           html={html}
@@ -368,7 +366,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className={`pane pane-html${htmlFullscreen ? ' pane-html--full' : ''}`}>
+        <div className={`pane pane-html${effectiveHtmlFullscreen ? ' pane-html--full' : ''}`}>
           <div className="pane-title-row">
             <h2 className="pane-heading">HTML Editor</h2>
             <div className="code-length" title="HTML code length">
@@ -490,7 +488,7 @@ export default function App() {
               value={html}
               onChange={onHtmlChange}
               fontSize={fontSize}
-              fullscreen={htmlFullscreen}
+              fullscreen={effectiveHtmlFullscreen}
               showLineNumbers={settings.showLineNumbers}
               lineWrapping={settings.lineWrapping}
               codeFolding={settings.codeFolding}

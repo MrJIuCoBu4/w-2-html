@@ -1,17 +1,18 @@
 import {
   forwardRef,
-  useEffect,
+  useCallback,
   useImperativeHandle,
   useMemo,
   useRef,
 } from 'react'
-import CodeMirror from '@uiw/react-codemirror'
+import CodeMirror, { ExternalChange } from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import {
   EditorView,
   highlightWhitespace,
   keymap,
   placeholder as cmPlaceholder,
+  type ViewUpdate,
 } from '@codemirror/view'
 import { EditorSelection } from '@codemirror/state'
 import { openSearchPanel, search, searchKeymap } from '@codemirror/search'
@@ -55,7 +56,43 @@ export const HtmlEditor = forwardRef<HtmlEditorHandle, Props>(
     ref,
   ) {
     const viewRef = useRef<EditorView | null>(null)
-    const pendingCaret = useRef<SavedCaret | null>(null)
+    /**
+     * Last caret/scroll the user left in the editor. `@uiw/react-codemirror`
+     * replaces the whole doc (annotated with `ExternalChange`) when `value`
+     * changes from above — undo, prettify, visual→HTML sync. That dispatch
+     * would otherwise drop the caret to the end, so we put it back afterwards.
+     */
+    const lastCaret = useRef<SavedCaret | null>(null)
+
+    const onUpdate = useCallback((update: ViewUpdate) => {
+      const external = update.transactions.some(
+        (tr) => tr.annotation(ExternalChange) != null,
+      )
+      if (external) {
+        const saved = lastCaret.current
+        if (!saved) return
+        // The doc replace is being applied right now; restore once it settles.
+        queueMicrotask(() => {
+          const view = viewRef.current
+          if (!view) return
+          const len = view.state.doc.length
+          view.dispatch({
+            selection: EditorSelection.single(
+              Math.min(saved.anchor, len),
+              Math.min(saved.head, len),
+            ),
+          })
+          view.scrollDOM.scrollTop = saved.scrollTop
+        })
+        return
+      }
+      const sel = update.state.selection.main
+      lastCaret.current = {
+        anchor: sel.anchor,
+        head: sel.head,
+        scrollTop: update.view.scrollDOM.scrollTop,
+      }
+    }, [])
 
     useImperativeHandle(ref, () => ({
       openFind: () => {
@@ -103,35 +140,6 @@ export const HtmlEditor = forwardRef<HtmlEditorHandle, Props>(
       return ext
     }, [lineWrapping, autoCloseTags, showWhitespace])
 
-    // Before uiw replaces the doc from `value`, remember caret + scroll.
-    const view = viewRef.current
-    if (view && value !== view.state.doc.toString()) {
-      const sel = view.state.selection.main
-      pendingCaret.current = {
-        anchor: sel.anchor,
-        head: sel.head,
-        scrollTop: view.scrollDOM.scrollTop,
-      }
-    }
-
-    // After uiw's controlled update (effect), put caret/scroll back.
-    // Child effects run first, so this runs after the doc replace.
-    useEffect(() => {
-      const ed = viewRef.current
-      const saved = pendingCaret.current
-      if (!ed || !saved) return
-      if (ed.state.doc.toString() !== value) return
-      pendingCaret.current = null
-      const len = ed.state.doc.length
-      ed.dispatch({
-        selection: EditorSelection.single(
-          Math.min(saved.anchor, len),
-          Math.min(saved.head, len),
-        ),
-      })
-      ed.scrollDOM.scrollTop = saved.scrollTop
-    }, [value])
-
     return (
       <div className={`html-cm${fullscreen ? ' is-fullscreen' : ''}`} style={{ fontSize }}>
         <CodeMirror
@@ -141,6 +149,7 @@ export const HtmlEditor = forwardRef<HtmlEditorHandle, Props>(
           theme="light"
           extensions={extensions}
           onChange={onChange}
+          onUpdate={onUpdate}
           onCreateEditor={(ed) => {
             viewRef.current = ed
           }}

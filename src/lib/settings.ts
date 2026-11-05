@@ -435,7 +435,7 @@ export function applyEntityEncoding(
   }
   decoded = expandLanguageNumericEntities(decoded)
   if (mode === 'raw') return decoded
-  return decoded.replace(/[^\x00-\x7F]/gu, (ch) => {
+  return decoded.replace(/[^\p{ASCII}]/gu, (ch) => {
     const code = ch.codePointAt(0)!
     if (isCjkSymbolCodePoint(code)) return ch
     const named = NAMED_ENTITIES[code]

@@ -92,7 +92,9 @@ export function TableBubbleToolbar({ editor }: Props) {
 
   useEffect(() => {
     if (!editor) return
-    update()
+    // Defer the first measurement so setPos does not run synchronously inside
+    // the effect (cascading render warning); the toolbar is placed pre-paint.
+    queueMicrotask(update)
     editor.on('selectionUpdate', update)
     editor.on('transaction', update)
     editor.on('focus', update)
@@ -114,7 +116,8 @@ export function TableBubbleToolbar({ editor }: Props) {
   }, [menu])
 
   useLayoutEffect(() => {
-    update()
+    // Menu open/close changes the anchor geometry — re-place after commit.
+    queueMicrotask(update)
   }, [update, menu])
 
   if (!editor || !pos) return null

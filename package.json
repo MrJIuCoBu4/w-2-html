@@ -14,6 +14,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check": "npm run lint && npm run build",
     "lint": "oxlint",
     "preview": "vite preview"
   },

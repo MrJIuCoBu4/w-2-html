@@ -318,6 +318,12 @@ function Menu({
     left: number
     minWidth: number
   } | null>(null)
+  // Drop stale coordinates as soon as `open` flips, during render.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    setCoords(null)
+  }
 
   const place = useCallback(() => {
     const dropdown = hostRef.current?.closest('.tb-dropdown') as HTMLElement | null
@@ -355,11 +361,10 @@ function Menu({
   }, [className])
 
   useLayoutEffect(() => {
-    if (!open) {
-      setCoords(null)
-      return
-    }
-    place()
+    if (!open) return
+    // Measure after commit, then position: setState must not run synchronously
+    // inside the effect (it would cascade an extra render before paint).
+    queueMicrotask(place)
   }, [open, place, children])
 
   useEffect(() => {
@@ -431,7 +436,9 @@ export function Toolbar({
   entityEncoding = 'named',
   fullPageHtml = false,
 }: Props) {
-  const [more, setMore] = useState<MorePanel>(null)
+  const [moreState, setMoreState] = useState<MorePanel>(null)
+  // Full toolbar always shows the text row, so a stored panel is ignored there.
+  const more = compact ? moreState : null
   const [menu, setMenu] = useState<OpenMenu>(null)
   const [urlPopup, setUrlPopup] = useState<UrlPopupKind>(null)
   const [toast, setToast] = useState<{
@@ -463,17 +470,13 @@ export function Toolbar({
     }
   }, [editor])
 
-  useEffect(() => {
-    if (!compact) setMore(null)
-  }, [compact])
-
   const textOpen = compact ? more === 'text' : true
 
   const closeMenu = useCallback(() => setMenu(null), [])
 
   const toggleMore = (panel: MorePanel) => {
     setMenu(null)
-    setMore((prev) => (prev === panel ? null : panel))
+    setMoreState((prev) => (prev === panel ? null : panel))
   }
 
   const toggleMenu = (id: OpenMenu) => {
