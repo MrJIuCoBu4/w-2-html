@@ -269,8 +269,12 @@ export default function App() {
   useEffect(() => {
     const next = applyEntityEncoding(htmlRef.current, settings.entityEncoding)
     if (next === htmlRef.current) return
-    applyHtml(next, { history: false, from: 'html', programmatic: true })
-  }, [settings.entityEncoding, applyHtml])
+    // Strict string compare: applyHtml's htmlEquals guard treats &copy; and ©
+    // as equal, which would make every re-encode a silent no-op (entity
+    // spelling is the whole point of this preference). Push directly.
+    markApplyingFrom('html', { suppressCmEcho: true })
+    setHistory((h) => (h.present === next ? h : { ...h, present: next }))
+  }, [settings.entityEncoding, markApplyingFrom])
 
   const handleUndo = () => {
     // Merge flush + undo in one update so React does not apply them to a stale base.

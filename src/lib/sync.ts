@@ -429,7 +429,9 @@ export function cleanWordPaste(html: string): string {
   out = out.replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, '')
   out = out.replace(/<!--[\s\S]*?-->/g, '')
   out = out.replace(/<\/?(o|w|m):[^>]*>/gi, '')
-  out = out.replace(/\s*class=("|&quot;)?Mso[^"'\s>]*/gi, '')
+  // Quoted `class="Mso…"` and unquoted `class=Mso…`; the trailing \1 keeps
+  // the closing quote so tags are not corrupted into `<p" style=…>`.
+  out = out.replace(/\s*class=("|&quot;)?Mso[^"'\s>]*\1?/gi, '')
   out = out.replace(/\s*style="[^"]*mso-[^"]*"/gi, (m) => {
     const cleaned = m
       .replace(/mso-[^:;"]+:[^;"]+;?/gi, '')

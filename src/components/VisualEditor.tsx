@@ -158,12 +158,6 @@ export function VisualEditor({
     ],
     content: html || '<p></p>',
     editable: true,
-    onCreate: ({ editor: ed }) => {
-      editorRef.current = ed
-    },
-    onDestroy: () => {
-      editorRef.current = null
-    },
     editorProps: {
       attributes: {
         class: 'visual-prose',
@@ -244,6 +238,13 @@ export function VisualEditor({
     if (import.meta.env.DEV) {
       ;(window as unknown as { __W2H_EDITOR?: Editor | null }).__W2H_EDITOR =
         editor
+    }
+    // Clear only when this exact instance owned the ref. Under StrictMode
+    // TipTap may create and destroy a stray instance later in the lifecycle;
+    // an unconditional reset there would null the live editor's ref and
+    // silently drop every "Keep"/"Clean" paste in dev.
+    return () => {
+      if (editorRef.current === editor) editorRef.current = null
     }
   }, [editor])
 
