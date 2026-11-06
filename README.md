@@ -56,23 +56,9 @@ npm run dev
 | ------- | -------- |
 | `npm run dev` | Dev-сервер с HMR |
 | `npm run build` | Проверка типов + production-сборка |
-| `npm run check` | Линт + сборка (то, что гоняет CI) |
+| `npm run check` | Линт + сборка |
 | `npm run preview` | Раздача сборки из `dist/` |
 | `npm run lint` | Oxlint |
-| `npm run test:e2e` | E2E-тесты Playwright (сами поднимают dev-сервер) |
-
-## Тесты
-
-```bash
-npx playwright install chromium   # один раз
-npm run test:e2e                   # прогон против dev-сервера
-```
-
-Покрытие: синхронизация Visual↔HTML, форматирование (марки, заголовки, списки,
-отступы, цитаты, цвета), режимы вставки (Keep / Clean / Ask), очистка Word-разметки,
-кодировки (named / numeric / raw), вставка (ссылка, изображение, видео, таблица,
-спецсимволы), инструменты HTML (форматирование, сжатие, общая история undo/redo,
-поиск и замена), раскладка панелей и сохранение в `localStorage`.
 
 ## Структура проекта
 
@@ -81,8 +67,6 @@ src/
   components/   VisualEditor, HtmlEditor, Toolbar, Settings, таблицы…
   lib/          настройки, синхронизация, очистка, списки, спецсимволы, кодировки…
   App.tsx       Каркас двух панелей и история
-tests/
-  e2e/          Функциональные тесты Playwright (helpers + спеки)
 public/         favicon
 ```
 
