@@ -1,3 +1,5 @@
+import { NAMED_ENTITIES } from './settings'
+
 /** Normalize HTML for equality checks to avoid sync feedback loops. */
 export function normalizeHtml(html: string): string {
   return html
@@ -42,14 +44,47 @@ export function validateHtml(html: string): string | null {
   }
 }
 
+/** Entity name → code point, for decoding text before counting. */
+const NAMED_ENTITY_CODES: Record<string, number> = (() => {
+  const map: Record<string, number> = { amp: 38, lt: 60, gt: 62, quot: 34, apos: 39 }
+  for (const [code, entity] of Object.entries(NAMED_ENTITIES)) {
+    // Entity spelling is case-sensitive (&Eacute; ≠ &eacute;).
+    map[entity.slice(1, -1)] = Number(code)
+  }
+  return map
+})()
+
+const ENTITY_RE = /&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z][a-zA-Z0-9]*));/g
+
+function codePointToString(code: number, fallback: string): string {
+  if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) return fallback
+  try {
+    return String.fromCodePoint(code)
+  } catch {
+    return fallback
+  }
+}
+
+/** Decode numeric and named entities (`&eacute;` → `é`) for text stats. */
+export function decodeHtmlEntities(text: string): string {
+  if (!text.includes('&')) return text
+  return text.replace(ENTITY_RE, (full, dec, hex, name) => {
+    if (dec) return codePointToString(Number(dec), full)
+    if (hex) return codePointToString(Number.parseInt(hex, 16), full)
+    const code = NAMED_ENTITY_CODES[name as string]
+    return code === undefined ? full : codePointToString(code, full)
+  })
+}
+
 export function countWords(text: string): number {
-  const t = text.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim()
+  const t = decodeHtmlEntities(text.replace(/<[^>]+>/g, ' ')).trim()
   if (!t) return 0
   return t.split(/\s+/).filter(Boolean).length
 }
 
 export function countChars(text: string): number {
-  return text.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').length
+  // Code points, not UTF-16 units — an emoji counts as one character.
+  return Array.from(decodeHtmlEntities(text.replace(/<[^>]+>/g, ''))).length
 }
 
 const EMPTY_P_RE =
@@ -240,11 +275,42 @@ export function nestFlatIndentedLists(html: string): string {
   }
 }
 
+/**
+ * Drop the trailing empty paragraph TipTap's `trailingNode` keeps after
+ * non-paragraph blocks (headings, lists, quotes, tables, code). It is editor
+ * chrome, not content, and would export as a stray blank line. A blank line
+ * the user typed after a paragraph is left untouched.
+ */
+function stripTrailingEditorSpacer(html: string): string {
+  if (!/<p(?:\s[^>]*)?>\s*(?:<br\s*\/?>\s*)?<\/p>\s*$/i.test(html)) return html
+  try {
+    const doc = new DOMParser().parseFromString(
+      `<!DOCTYPE html><html><body>${html}</body></html>`,
+      'text/html',
+    )
+    const body = doc.body
+    const last = body.lastElementChild
+    if (!last || last.tagName !== 'P') return html
+    const prev = last.previousElementSibling
+    // trailingNode only appends when the last block is not a paragraph.
+    if (!prev || prev.tagName === 'P') return html
+    if ((last.textContent || '').replace(/\u00a0/g, ' ').trim()) return html
+    if (last.querySelector('img, iframe, video, object, embed, hr')) return html
+    if (last.querySelectorAll('br').length > 1) return html
+    last.remove()
+    return body.innerHTML
+  } catch {
+    return html
+  }
+}
+
 /** Visual→HTML sync: normalize blank lines + Froala-like list serialization. */
 export function serializeVisualHtml(html: string): string {
-  return stripNoopSpanStyles(
-    unwrapListItemParagraphs(nestFlatIndentedLists(normalizeEmptyParagraphs(html))),
-  ).replace(/\s*data-list-bridge="1"/gi, '')
+  return stripTrailingEditorSpacer(
+    stripNoopSpanStyles(
+      unwrapListItemParagraphs(nestFlatIndentedLists(normalizeEmptyParagraphs(html))),
+    ).replace(/\s*data-list-bridge="1"/gi, ''),
+  )
 }
 
 /**

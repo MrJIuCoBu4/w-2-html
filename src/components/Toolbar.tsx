@@ -72,6 +72,11 @@ type Props = {
   embedImages?: boolean
   entityEncoding?: EntityEncoding
   fullPageHtml?: boolean
+  /** Shared document history (App), not ProseMirror's local undo stack. */
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
 }
 
 async function maybeEmbedImageUrl(url: string): Promise<string> {
@@ -435,6 +440,10 @@ export function Toolbar({
   embedImages = false,
   entityEncoding = 'named',
   fullPageHtml = false,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: Props) {
   const [moreState, setMoreState] = useState<MorePanel>(null)
   // Full toolbar always shows the text row, so a stored panel is ignored there.
@@ -931,15 +940,15 @@ export function Toolbar({
 
         <Btn
           title="Undo (Ctrl+Z)"
-          disabled={!editor.can().undo()}
-          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!canUndo}
+          onClick={() => onUndo?.()}
         >
           <Icon i={FaUndo} className="tb-icon-balance" />
         </Btn>
         <Btn
           title="Redo (Ctrl+Shift+Z)"
-          disabled={!editor.can().redo()}
-          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!canRedo}
+          onClick={() => onRedo?.()}
         >
           <Icon i={FaRedo} className="tb-icon-balance" />
         </Btn>

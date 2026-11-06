@@ -44,6 +44,14 @@ import './App.css'
 
 const INITIAL_HTML = ''
 
+/**
+ * Legacy flat-list indent markup (`data-indent` attr or inline margin-left),
+ * which must be re-serialized into real nested lists. Matched structurally so
+ * typing the words "margin-left:" in body text does not trigger normalization.
+ */
+const LEGACY_INDENT_RE =
+  /\sdata-indent\s*=|\bstyle\s*=\s*["'][^"']*margin-left\s*:/i
+
 export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => readSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -114,8 +122,15 @@ export default function App() {
    * never suppress real keystrokes (that would drop characters).
    */
   const suppressCmEcho = useRef(false)
-  const htmlHistoryTimer = useRef<number | null>(null)
-  const pendingHtmlSnapshot = useRef<string | null>(null)
+  /**
+   * One document history for both panes. A typing burst (visual or HTML) is
+   * coalesced into one undo step; programmatic actions push immediately.
+   * Holding a single pending snapshot also keeps undo order correct when the
+   * user alternates between panes faster than the debounce.
+   */
+  const pendingHistory = useRef<{ snapshot: string; timer: number | null } | null>(
+    null,
+  )
 
   const markApplyingFrom = useCallback(
     (from: 'visual' | 'html' | null, opts?: { suppressCmEcho?: boolean }) => {
@@ -140,15 +155,13 @@ export default function App() {
     [],
   )
 
-  /** Commit any pending debounced HTML-typing history before undo/tools. */
-  const flushHtmlHistory = useCallback(() => {
-    if (htmlHistoryTimer.current) {
-      window.clearTimeout(htmlHistoryTimer.current)
-      htmlHistoryTimer.current = null
-    }
-    const snapshot = pendingHtmlSnapshot.current
-    pendingHtmlSnapshot.current = null
-    if (snapshot === null) return
+  /** Push the coalesced typing burst into `past` (no-op when nothing changed). */
+  const commitPendingHistory = useCallback(() => {
+    const pending = pendingHistory.current
+    if (!pending) return
+    if (pending.timer !== null) window.clearTimeout(pending.timer)
+    pendingHistory.current = null
+    const snapshot = pending.snapshot
     setHistory((h) => {
       if (htmlEquals(snapshot, h.present)) return h
       return {
@@ -158,6 +171,22 @@ export default function App() {
       }
     })
   }, [])
+
+  /** Remember the document as it was before a typing burst; commit after 500ms. */
+  const scheduleHistoryCommit = useCallback(
+    (snapshot: string) => {
+      if (!pendingHistory.current) {
+        pendingHistory.current = { snapshot, timer: null }
+      }
+      const pending = pendingHistory.current
+      if (pending.timer !== null) window.clearTimeout(pending.timer)
+      pending.timer = window.setTimeout(() => {
+        // Another burst may have replaced this entry in the meantime.
+        if (pendingHistory.current === pending) commitPendingHistory()
+      }, 500)
+    },
+    [commitPendingHistory],
+  )
 
   const stats = useMemo(
     () => ({
@@ -207,9 +236,10 @@ export default function App() {
       // Strict compare: htmlEquals treats 中 and &#20013; as equal and would
       // leave CJK stuck as numeric entities in the code pane.
       if (formatted === htmlRef.current) return
-      applyHtml(formatted, { history: true, from: 'visual' })
+      scheduleHistoryCommit(htmlRef.current)
+      applyHtml(formatted, { history: false, from: 'visual' })
     },
-    [applyHtml, encodeForCodePane],
+    [applyHtml, encodeForCodePane, scheduleHistoryCommit],
   )
 
   const onHtmlChange = useCallback(
@@ -218,37 +248,19 @@ export default function App() {
       // Drop controlled-value echoes only (undo/prettify/visual→html pushes).
       if (suppressCmEcho.current) return
       // Legacy flat list indent → real nested <ul> (PRO-style) before syncing Visual.
-      const normalized = /data-indent\s*=|margin-left\s*:/i.test(next)
+      const normalized = LEGACY_INDENT_RE.test(next)
         ? encodeForCodePane(prettifyHtml(serializeVisualHtml(next)))
         : next
       if (htmlEquals(normalized, htmlRef.current)) return
 
-      if (pendingHtmlSnapshot.current === null) {
-        pendingHtmlSnapshot.current = htmlRef.current
-      }
-
+      scheduleHistoryCommit(htmlRef.current)
       applyHtml(normalized, { history: false, from: 'html' })
-
-      if (htmlHistoryTimer.current) window.clearTimeout(htmlHistoryTimer.current)
-      htmlHistoryTimer.current = window.setTimeout(() => {
-        const snapshot = pendingHtmlSnapshot.current
-        pendingHtmlSnapshot.current = null
-        if (snapshot === null) return
-        setHistory((h) => {
-          if (htmlEquals(snapshot, h.present)) return h
-          return {
-            past: [...h.past, snapshot].slice(-80),
-            present: h.present,
-            future: [],
-          }
-        })
-      }, 500)
     },
-    [applyHtml, encodeForCodePane],
+    [applyHtml, encodeForCodePane, scheduleHistoryCommit],
   )
 
   const handlePrettify = () => {
-    flushHtmlHistory()
+    commitPendingHistory()
     applyHtml(encodeForCodePane(prettifyHtml(htmlRef.current)), {
       history: true,
       from: 'html',
@@ -257,7 +269,7 @@ export default function App() {
   }
 
   const handleCompress = () => {
-    flushHtmlHistory()
+    commitPendingHistory()
     applyHtml(encodeForCodePane(minifyHtml(htmlRef.current)), {
       history: true,
       from: 'html',
@@ -277,33 +289,15 @@ export default function App() {
   }, [settings.entityEncoding, markApplyingFrom])
 
   const handleUndo = () => {
-    // Merge flush + undo in one update so React does not apply them to a stale base.
-    if (htmlHistoryTimer.current) {
-      window.clearTimeout(htmlHistoryTimer.current)
-      htmlHistoryTimer.current = null
-    }
-    const snapshot = pendingHtmlSnapshot.current
-    pendingHtmlSnapshot.current = null
+    // Commit the in-flight typing burst first; functional updates compose, so
+    // the undo below sees the newest stack.
+    commitPendingHistory()
     markApplyingFrom('html', { suppressCmEcho: true })
-    setHistory((h) => {
-      let base = h
-      if (snapshot !== null && !htmlEquals(snapshot, h.present)) {
-        base = {
-          past: [...h.past, snapshot].slice(-80),
-          present: h.present,
-          future: [],
-        }
-      }
-      return undoHistory(base)
-    })
+    setHistory((h) => undoHistory(h))
   }
 
   const handleRedo = () => {
-    if (htmlHistoryTimer.current) {
-      window.clearTimeout(htmlHistoryTimer.current)
-      htmlHistoryTimer.current = null
-    }
-    pendingHtmlSnapshot.current = null
+    commitPendingHistory()
     markApplyingFrom('html', { suppressCmEcho: true })
     setHistory((h) => redoHistory(h))
   }
@@ -327,6 +321,10 @@ export default function App() {
           settings={settings}
           onSettingsChange={patchSettings}
           onOpenSettings={() => setSettingsOpen(true)}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          canUndo={canUndo(history)}
+          canRedo={canRedo(history)}
         />
 
         <div className="pane-gutter" role="separator" aria-orientation="vertical">

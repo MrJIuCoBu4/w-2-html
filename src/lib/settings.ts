@@ -195,7 +195,7 @@ export function wrapFullPageHtml(bodyHtml: string): string {
  * Named entities for special symbols only (typography, currency, math, arrows).
  * Letters of any language stay UTF-8 — never &eacute; / &#1092;.
  */
-const NAMED_ENTITIES: Record<number, string> = {
+export const NAMED_ENTITIES: Record<number, string> = {
   0xa0: '&nbsp;',
   0xa1: '&iexcl;',
   0xa2: '&cent;',

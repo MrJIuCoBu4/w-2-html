@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
+import { Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { ListItem } from '@tiptap/extension-list'
 import Image from '@tiptap/extension-image'
@@ -70,6 +71,11 @@ type Props = {
   onSettingsChange: (patch: Partial<AppSettings>) => void
   onOpenSettings: () => void
   onEditorReady?: (editor: Editor | null) => void
+  /** App-level document history shared with the HTML pane. */
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
 }
 
 type HeaderToggleKey = 'compactToolbar' | 'mobilePreview' | 'showCodePane'
@@ -95,12 +101,49 @@ export function VisualEditor({
   onSettingsChange,
   onOpenSettings,
   onEditorReady,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: Props) {
   const settingsRef = useRef(settings)
   // Mirror settings for paste handlers; layout effects run before any user event.
   useLayoutEffect(() => {
     settingsRef.current = settings
   }, [settings])
+
+  /**
+   * Undo/redo is owned by App (one history for both panes). Mirror the latest
+   * callbacks for the ProseMirror keymap, which is created once.
+   */
+  const historyRef = useRef({ undo: onUndo, redo: onRedo })
+  useLayoutEffect(() => {
+    historyRef.current = { undo: onUndo, redo: onRedo }
+  }, [onUndo, onRedo])
+
+  const AppHistoryKeys = useMemo(
+    () =>
+      Extension.create({
+        name: 'appHistoryKeys',
+        addKeyboardShortcuts() {
+          return {
+            'Mod-z': () => {
+              historyRef.current.undo()
+              return true
+            },
+            'Mod-Shift-z': () => {
+              historyRef.current.redo()
+              return true
+            },
+            'Mod-y': () => {
+              historyRef.current.redo()
+              return true
+            },
+          }
+        },
+      }),
+    [],
+  )
   const editorRef = useRef<Editor | null>(null)
   const styleTagRef = useRef<HTMLStyleElement | null>(null)
   const fontLinksRef = useRef<HTMLLinkElement[]>([])
@@ -122,6 +165,9 @@ export function VisualEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
+        // One history for both panes lives in App — ProseMirror's own would
+        // desync from the code-pane document history.
+        undoRedo: false,
         heading: { levels: [1, 2, 3, 4] },
         listItem: false,
         link: {
@@ -155,6 +201,7 @@ export function VisualEditor({
       BlockLineHeight,
       IframeVideo,
       ListStyles,
+      AppHistoryKeys,
     ],
     content: html || '<p></p>',
     editable: true,
@@ -398,6 +445,10 @@ export function VisualEditor({
           embedImages={settings.embedImages}
           entityEncoding={settings.entityEncoding}
           fullPageHtml={settings.fullPageHtml}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={onUndo}
+          onRedo={onRedo}
         />
       </div>
       <div className="pane-body visual-body">
